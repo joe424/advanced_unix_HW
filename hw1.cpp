@@ -6,6 +6,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -20,6 +21,8 @@ class INFO{
         string username;
         string fd;
         string type;
+        size_t inode;
+        string name;
 };
 
 void err_sys(string str) { 
@@ -33,20 +36,67 @@ bool is_number(string str){
     return !str.empty() && it == str.end();
 }
 
+void print_field(){
+    //cout << "COMMAND\tPID\tUSER\tFD\tTYPE\tNODE\tNAME\n";
+    cout.width(38);
+    cout << left << "COMMAND";
+    cout.width(8);
+    cout << left << "PID";
+    cout.width(19);
+    cout << left << "USER";
+    cout.width(7);
+    cout << left << "FD";
+    cout.width(8);
+    cout << left << "TYPE";
+    cout.width(9);
+    cout << left << "NODE";
+    cout << left << "NAME";
+    cout << endl;
+}
+
+void print_result(vector<INFO> info){
+    for(int i=0; i<info.size(); i++){
+        cout.width(38);
+        cout << left << info[i].comm;
+        cout.width(8);
+        cout << left << info[i].pid;
+        cout.width(19);
+        cout << left << info[i].username;
+        cout.width(7);
+        cout << left << info[i].fd;
+        cout.width(8);
+        cout << left << info[i].type;
+        cout.width(9);
+        cout << left << info[i].inode;
+        cout << left << info[i].name;
+        cout << endl;
+    }
+}
+
+string type_determine(unsigned st_type){
+    switch(st_type){
+        case S_IFDIR:
+            return "DIR";
+        case S_IFREG:
+            return "REG";
+        case S_IFCHR:
+            return "CHR";
+        case S_IFIFO:
+            return "FIFO";
+        case S_IFSOCK:
+            return "SOCK";
+        default:
+            return "unknown";
+    }   
+}
+
 int main(int argc, char *argv[]){
     
     vector<INFO> info;
     DIR *dp;
     struct dirent d, *p;
     
-    //cout << "COMMAND\tPID\tUSER\tFD\tTYPE\tNODE\tNAME\n";
-    cout.width(20);
-    cout << left << "COMMAND";
-    cout.width(7);
-    cout << left << "PID";
-    cout.width(10);
-    cout << left << "USER";
-    cout << endl;
+    print_field();
     
     if((dp = opendir("/proc")) == NULL)
         err_sys("cannot open directory \"proc\"");
@@ -59,9 +109,14 @@ int main(int argc, char *argv[]){
             struct passwd *pws;
             string str = "";            
             char buf[BUF_SIZE];
+
             memset(buf, NULL, BUF_SIZE);
 
+            //######################
+
             in.pid = p->d_name;
+            
+            //######################
 
             if((fd = open(("/proc/" + in.pid + "/comm").c_str(), O_RDONLY)) == -1)
                 err_sys("cannot open file /proc/" + in.pid + "/comm");
@@ -76,26 +131,39 @@ int main(int argc, char *argv[]){
             }
             in.comm = str;
 
+            //######################
+
             if((fstat(fd, &st)))
                 err_sys("failed fstat file /proc/" + in.pid + "/comm");
             pws = getpwuid(st.st_uid);
             in.username = pws->pw_name;
 
+            //######################
             close(fd);
+            
+            stat(("/proc/" + in.pid + "/cwd").c_str(), &st);
+            in.fd = "cwd";
+            in.type = type_determine(st.st_mode & S_IFMT);
+            in.inode = st.st_ino;
+            if((fd = open(("/proc/" + in.pid + "/cwd").c_str(), O_RDONLY)) == -1)
+                err_sys("cannot open file /proc/" + in.pid + "/cwd");
+            str = "";
+            memset(buf, NULL, BUF_SIZE);
+            if((readlink(("/proc/" + in.pid + "/cwd").c_str(), buf, BUF_SIZE)) == -1)
+                err_sys("readlink failed at /proc/" + in.pid + "/cwd");
+            for(int i=0; i<BUF_SIZE; i++){
+                if(buf[i] == '\n')
+                    break;
+                str += buf[i];
+            }
+            in.name = str;
+            close(fd);
+
             info.push_back(in);
         }
     }
 
-    for(int i=0; i<info.size(); i++){
-        cout.width(20);
-        cout << left << info[i].comm;
-        cout.width(7);
-        cout << left << info[i].pid;
-        cout.width(10);
-        cout << left << info[i].username;
-        cout << endl;
-    }
-
+    print_result(info);
 
     closedir(dp);
 }
