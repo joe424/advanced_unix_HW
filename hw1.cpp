@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <sstream>
 
 #include <pwd.h>
 #include <fcntl.h>
@@ -10,7 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#define BUF_SIZE 100
+#define BUF_SIZE 512
 
 using namespace std;
 
@@ -21,7 +22,7 @@ class INFO{
         string username;
         string fd;
         string type;
-        size_t inode;
+        string inode;
         string name;
 };
 
@@ -73,6 +74,16 @@ void print_result(vector<INFO> info){
     }
 }
 
+string mode_determine(unsigned st_mod){
+    // cout << st_mod << endl;
+    if((st_mod & S_IRUSR) && (st_mod & S_IWUSR))
+        return "u";
+    else if(st_mod & S_IRUSR)
+        return "r";
+    else
+        return "w";  
+}
+
 string type_determine(unsigned st_type){
     switch(st_type){
         case S_IFDIR:
@@ -87,7 +98,7 @@ string type_determine(unsigned st_type){
             return "SOCK";
         default:
             return "unknown";
-    }   
+    }
 }
 
 int main(int argc, char *argv[]){
@@ -106,64 +117,141 @@ int main(int argc, char *argv[]){
             INFO in;
             int fd;
             struct stat st;
-            struct passwd *pws;
-            string str = "";            
             char buf[BUF_SIZE];
-
             memset(buf, NULL, BUF_SIZE);
 
-            //######################
-
+            /* get pid */
             in.pid = p->d_name;
-            
-            //######################
 
+            /* get command name and user name */
             if((fd = open(("/proc/" + in.pid + "/comm").c_str(), O_RDONLY)) == -1)
                 err_sys("cannot open file /proc/" + in.pid + "/comm");
-
             if((read(fd, buf, BUF_SIZE)) == -1)
                 err_sys("cannot read file /proc/" + in.pid + "/comm");
-
-            for(int i=0; i<BUF_SIZE; i++){
-                if(buf[i] == '\n')
-                    break;
-                str += buf[i];
-            }
-            in.comm = str;
-
-            //######################
-
+            in.comm = ((string)buf).substr(0, ((string)buf).find("\n"));
             if((fstat(fd, &st)))
                 err_sys("failed fstat file /proc/" + in.pid + "/comm");
+            struct passwd *pws;
             pws = getpwuid(st.st_uid);
             in.username = pws->pw_name;
-
-            //######################
             close(fd);
             
-            stat(("/proc/" + in.pid + "/cwd").c_str(), &st);
-            in.fd = "cwd";
-            in.type = type_determine(st.st_mode & S_IFMT);
-            in.inode = st.st_ino;
-            if((fd = open(("/proc/" + in.pid + "/cwd").c_str(), O_RDONLY)) == -1)
-                err_sys("cannot open file /proc/" + in.pid + "/cwd");
-            str = "";
-            memset(buf, NULL, BUF_SIZE);
-            if((readlink(("/proc/" + in.pid + "/cwd").c_str(), buf, BUF_SIZE)) == -1)
-                err_sys("readlink failed at /proc/" + in.pid + "/cwd");
-            for(int i=0; i<BUF_SIZE; i++){
-                if(buf[i] == '\n')
-                    break;
-                str += buf[i];
+            /* get cwd, root, exe's type, node, name */
+            string fds[3] = {"cwd", "root", "exe"};
+            for(int i=0; i<sizeof(fds)/sizeof(fds[0]); i++){
+                memset(buf, NULL, BUF_SIZE);
+                if((readlink(("/proc/" + in.pid + "/"  + fds[i]).c_str(), buf, BUF_SIZE)) == -1){
+                    if(errno == 13 /* Permission denied */){
+                        in.fd = fds[i];
+                        in.type = "unknown";
+                        in.inode = "";
+                        in.name = "/proc/" + in.pid + "/"  + fds[i] + " (readlink: Permission denied)";
+                    }else if(errno == 2 /* No such file or directory */){
+                        continue;
+                    }else{
+                        cout << errno << endl;
+                        cout << strerror(errno) << endl;
+                        err_sys("readlink failed at /proc/" + in.pid + "/"  + fds[i]);
+                    }
+                }else{
+                    in.fd = fds[i];
+                    in.name = ((string)buf).substr(0, ((string)buf).find("\n"));
+                    stat(("/proc/" + in.pid + "/"  + fds[i]).c_str(), &st);
+                    in.type = type_determine(st.st_mode & S_IFMT);
+                    in.inode = to_string(st.st_ino);
+                }
+                info.push_back(in);
             }
-            in.name = str;
-            close(fd);
 
-            info.push_back(in);
+            /* mem */
+            if((fd = open(("/proc/" + in.pid + "/maps").c_str(), O_RDONLY)) == -1){
+                if(errno != 13 /* NOT Permission denied */){
+                    cout << errno << ": " << strerror(errno) << endl;
+                    err_sys("cannot open file /proc/" + in.pid + "/maps");
+                }
+            }else{
+                string str = "";
+                memset(buf, NULL, BUF_SIZE);
+                while((read(fd, buf, BUF_SIZE)) > 0){
+                    for(int i=0; i<BUF_SIZE; i++)
+                        str += buf[i];
+                    memset(buf, NULL, BUF_SIZE);
+                }
+                close(fd);
+                str = str.substr(0, str.rfind("\n"));
+                stringstream ss(str);
+                string tmp = "";
+                vector<string> paths;
+                size_t found;
+                while(getline(ss, tmp, '\n')){
+                    found = tmp.find(":");
+                    tmp = tmp.substr(found + 4, tmp.size() - found);
+                    found = tmp.find("/");
+                    if(found != string::npos){
+                        if(paths.size() == 0 || paths[paths.size()-1] != tmp)
+                            paths.push_back(tmp);
+                    }
+                }
+                for(int i=0; i<paths.size(); i++){
+                    tmp = paths[i];
+                    found = tmp.find("/");
+                    in.inode = to_string(stoi(tmp.substr(0, found)));
+                    tmp = tmp.substr(found, tmp.size() - found);
+                    found = tmp.find("(deleted)");
+                    if(found != string::npos){
+                        in.fd = "del";
+                        in.name = tmp.substr(0, found - 1);
+                        in.type = "unknown";
+                    }else{
+                        in.fd = "mem";
+                        in.name = tmp;
+                        stat(tmp.c_str(), &st);
+                        in.type = type_determine(st.st_mode & S_IFMT);
+                    }
+                    info.push_back(in);
+                }
+                paths.clear();
+                ss.str("");
+                ss.clear();
+            }
+
+            /* /proc/[pid]/fd */
+            DIR *fd_dir;
+            if((fd_dir = opendir(("/proc/" + in.pid + "/fd").c_str())) == NULL){
+                if(errno == 13 /* Permission denied */){
+                    in.fd = "NOFD";
+                    in.type = "";
+                    in.inode = "";
+                    in.name = "/proc/" + in.pid + "/fd (opendir: Permission denied)";
+                    info.push_back(in);
+                }else{
+                    cout << errno << ": " << strerror(errno) << endl;
+                    err_sys("cannot open directory /proc/" + in.pid + "/fd");
+                }
+            }else{
+                struct dirent _d, *_p;
+                while(readdir_r(fd_dir, &_d, &_p) == 0 && _p != NULL){
+                    if(strcmp(_p->d_name, ".") != 0 && strcmp(_p->d_name, "..") != 0){
+                        memset(buf, NULL, BUF_SIZE);
+                        if((readlink(("/proc/" + in.pid + "/fd/" + _p->d_name).c_str(), buf, BUF_SIZE)) == -1){
+                            cout << errno << ": " << strerror(errno) << endl;
+                            err_sys("readlink failed at /proc/" + in.pid + "/fd/" + _p->d_name);
+                        }else{
+                            in.name = ((string)buf).substr(0, ((string)buf).find("\n"));;
+                            stat(("/proc/" + in.pid + "/fd/" + _p->d_name).c_str(), &st);
+                            in.fd = _p->d_name + mode_determine(st.st_mode & 32767);
+                            in.type = type_determine(st.st_mode & S_IFMT);
+                            in.inode = to_string(st.st_ino);
+                        }
+                        info.push_back(in);
+                    }
+                }
+            }
+            closedir(fd_dir);
+
         }
     }
 
     print_result(info);
-
     closedir(dp);
 }
