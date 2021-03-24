@@ -75,7 +75,6 @@ void print_result(vector<INFO> info){
 }
 
 string mode_determine(unsigned st_mod){
-    // cout << st_mod << endl;
     if((st_mod & S_IRUSR) && (st_mod & S_IWUSR))
         return "u";
     else if(st_mod & S_IRUSR)
@@ -237,9 +236,12 @@ int main(int argc, char *argv[]){
                             cout << errno << ": " << strerror(errno) << endl;
                             err_sys("readlink failed at /proc/" + in.pid + "/fd/" + _p->d_name);
                         }else{
-                            in.name = ((string)buf).substr(0, ((string)buf).find("\n"));;
-                            stat(("/proc/" + in.pid + "/fd/" + _p->d_name).c_str(), &st);
-                            in.fd = _p->d_name + mode_determine(st.st_mode & 32767);
+                            in.name = ((string)buf).substr(0, ((string)buf).find("\n"));
+                            // string tmp2 = "/proc/" + in.pid + "/fd/" + _p->d_name;
+                            // cout << tmp2 << endl;
+                            // stat((in.name).c_str(), &st);
+                            lstat(("/proc/" + in.pid + "/fd/" + _p->d_name).c_str(), &st);
+                            in.fd = _p->d_name + mode_determine(st.st_mode);
                             in.type = type_determine(st.st_mode & S_IFMT);
                             in.inode = to_string(st.st_ino);
                         }
