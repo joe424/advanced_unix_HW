@@ -4,10 +4,11 @@
 
 #include <pwd.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <regex.h>
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
-#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -55,8 +56,21 @@ void print_field(){
     cout << endl;
 }
 
-void print_result(vector<INFO> info){
+void print_result(vector<INFO> info, string argC, string argT, string argF){
+    regex_t regC, regF;
+    regmatch_t pmatch[1];
+    const size_t nmatch = 1;
+    if(argC != "")
+        regcomp(&regC, argC.c_str(), REG_EXTENDED);
+    if(argF != "")
+        regcomp(&regF, argF.c_str(), REG_EXTENDED);
     for(int i=0; i<info.size(); i++){
+        if(argC != "" && regexec(&regC, (info[i].comm).c_str(), nmatch, pmatch, 0) == REG_NOMATCH)
+            continue;
+        if(argT != "" && argT != info[i].type)
+            continue;
+        if(argF != "" && regexec(&regF, (info[i].name).c_str(), nmatch, pmatch, 0) == REG_NOMATCH)
+            continue;
         cout.width(38);
         cout << left << info[i].comm;
         cout.width(8);
@@ -72,6 +86,10 @@ void print_result(vector<INFO> info){
         cout << left << info[i].name;
         cout << endl;
     }
+    if(argC != "")
+        regfree(&regC);
+    if(argF != "")
+        regfree(&regF);
 }
 
 string mode_determine(unsigned st_mod){
@@ -101,7 +119,38 @@ string type_determine(unsigned st_type){
 }
 
 int main(int argc, char *argv[]){
-    
+
+    if(argc % 2 != 1) /* must be odd */
+        err_sys("argument no value");
+    string argC = "", argT = "", argF = "";
+    for(int i=1; i<argc; i++){
+        if(i % 2 == 1){
+            if((string)argv[i] == "-c")
+                argC = argv[i + 1];
+            else if((string)argv[i] == "-t")
+                argT = argv[i + 1];
+            else if((string)argv[i] == "-f")
+                argF = argv[i + 1];
+            else
+                err_sys("invalid arguments");
+        }
+    }
+    regex_t reg;
+    if(argC != ""){
+        if(regcomp(&reg, argC.c_str(), REG_EXTENDED) != 0){
+            regfree(&reg);
+            err_sys("-c's argument compile failed");
+        }
+        regfree(&reg);
+    }
+    if(argF != ""){
+        if(regcomp(&reg, argF.c_str(), REG_EXTENDED) != 0){
+            regfree(&reg);
+            err_sys("-f's argument compile failed");
+        }
+        regfree(&reg);
+    }
+
     vector<INFO> info;
     DIR *dp;
     struct dirent d, *p;
@@ -237,9 +286,6 @@ int main(int argc, char *argv[]){
                             err_sys("readlink failed at /proc/" + in.pid + "/fd/" + _p->d_name);
                         }else{
                             in.name = ((string)buf).substr(0, ((string)buf).find("\n"));
-                            // string tmp2 = "/proc/" + in.pid + "/fd/" + _p->d_name;
-                            // cout << tmp2 << endl;
-                            // stat((in.name).c_str(), &st);
                             lstat(("/proc/" + in.pid + "/fd/" + _p->d_name).c_str(), &st);
                             in.fd = _p->d_name + mode_determine(st.st_mode);
                             in.type = type_determine(st.st_mode & S_IFMT);
@@ -254,6 +300,6 @@ int main(int argc, char *argv[]){
         }
     }
 
-    print_result(info);
+    print_result(info, argC, argT, argF);
     closedir(dp);
 }
