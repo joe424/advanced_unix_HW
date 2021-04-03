@@ -143,6 +143,12 @@ int main(int argc, char *argv[]){
         }
         regfree(&reg);
     }
+    if(argT != ""){
+        if(argT != "REG" && argT != "CHR" && argT != "DIR" 
+        && argT != "FIFO" && argT != "SOCK" && argT != "unknown"){
+            err_sys("Invalid TYPE option.");
+        }
+    }
     if(argF != ""){
         if(regcomp(&reg, argF.c_str(), REG_EXTENDED) != 0){
             regfree(&reg);
