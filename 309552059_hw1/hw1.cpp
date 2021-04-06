@@ -242,8 +242,16 @@ int main(int argc, char *argv[]){
                     tmp = tmp.substr(found + 4, tmp.size() - found);
                     found = tmp.find("/");
                     if(found != string::npos){
-                        if(paths.size() == 0 || paths[paths.size()-1] != tmp)
+                        if(paths.size() == 0)
                             paths.push_back(tmp);
+                        else{
+                            for(int i=0; i<=paths.size(); i++){
+                                if(i == paths.size())
+                                    paths.push_back(tmp);
+                                if(i < paths.size() && paths[i] == tmp)
+                                    break;
+                            }
+                        }
                     }
                 }
                 for(int i=0; i<paths.size(); i++){
