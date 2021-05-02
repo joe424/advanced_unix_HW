@@ -398,7 +398,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
 
 void arg_parse(int argc, char *argv[]){
     if(argc == 1){
-        fprintf(stderr, "no command given.\n");
+        dprintf(STDERR_FILENO, "no command given.\n");
         exit(0);
     }
 
