@@ -396,7 +396,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
 	return ret;
 }
 
-int arg_parse(int argc, char *argv[]){
+void arg_parse(int argc, char *argv[]){
     if(argc == 1){
         fprintf(stderr, "no command given.\n");
         exit(0);
@@ -415,18 +415,34 @@ int arg_parse(int argc, char *argv[]){
     if(argv[1][0] == '-'){
         int ch;
         int i = (db_dash == -1) ? argc : db_dash;
-        while((ch = getopt(i, opt_arg, "p:o:")) != -1){
-            switch(ch) {
-            case 'p':
-                argP = (string)optarg;
-                break;
-            case 'o':
-                argO = (string)optarg;
-                break;
-            case '?':
-                return 1;
-            default:
-                return 1;
+        for(int j=1; j<i; j++){
+            if((string)argv[j] == "-p"){
+                if(j+1 >= i){
+                    dprintf(STDERR_FILENO, "no file specified!\n");
+                    exit(0);
+                }else
+                    argP = (string)argv[j++ + 1];
+            }
+            else if((string)argv[j] == "-o"){
+                if(j+1 >= i){
+                    dprintf(STDERR_FILENO, "no file specified!\n");
+                    exit(0);
+                }else
+                    argO = (string)argv[j++ + 1];
+            }
+            else if(argv[j][0] == '-' && strlen(argv[j]) == 2){
+                dprintf(STDERR_FILENO, "%s: invalid option -- \'%c\'\n", argv[0], argv[j][1]);
+                dprintf(STDERR_FILENO, "usage: ./logger [-o file] [-p sopath] [--] cmd [cmd args ...]\n");
+                dprintf(STDERR_FILENO, "        -p: set the path to logger.so, default = ./logger.so\n");
+                dprintf(STDERR_FILENO, "        -o: print output to file, print to \"stderr\" if no file specified\n");
+                dprintf(STDERR_FILENO, "        --: separate the arguments for logger and for the command\n");
+                exit(0);
+            }else{
+                dprintf(STDERR_FILENO, "usage: ./logger [-o file] [-p sopath] [--] cmd [cmd args ...]\n");
+                dprintf(STDERR_FILENO, "        -p: set the path to logger.so, default = ./logger.so\n");
+                dprintf(STDERR_FILENO, "        -o: print output to file, print to \"stderr\" if no file specified\n");
+                dprintf(STDERR_FILENO, "        --: separate the arguments for logger and for the command\n");
+                exit(0);
             }
         }
 
@@ -437,18 +453,17 @@ int arg_parse(int argc, char *argv[]){
             comm_arg_size = i-db_dash-1;
         }
     }else{
-        db_dash = (db_dash == -1) ? 0 : db_dash;
+        int j = (db_dash == -1) ? 0 : db_dash;
         int i;
-        for(i=db_dash+1; i<=argc; i++)
-            comm_arg[i-db_dash-1] = (i != argc) ? argv[i] : NULL;
-        comm_arg_size = i-db_dash-1;
+        for(i=j+1; i<=argc; i++)
+            comm_arg[i-j-1] = (i != argc) ? argv[i] : NULL;
+        comm_arg_size = i-j-1;
     }
 
-    if(!comm_arg_size){
-        fprintf(stderr, "no command given.\n");
+    if(!comm_arg_size || db_dash == argc-1){
+        dprintf(STDERR_FILENO, "no command given.\n");
         exit(0);
     }
-    return 0;
 }
 
 int main(int argc, char *argv[]){
@@ -456,12 +471,7 @@ int main(int argc, char *argv[]){
     comm_arg_size = 0;
     int FD = STDERR_FILENO;
 
-    if(arg_parse(argc, argv) == 1){
-        fprintf(stderr, "usage: ./logger [-o file] [-p sopath] [--] cmd [cmd args ...]\n");
-        fprintf(stderr, "        -p: set the path to logger.so, default = ./logger.so\n");
-        fprintf(stderr, "        -o: print output to file, print to \"stderr\" if no file specified\n");
-        fprintf(stderr, "        --: separate the arguments for logger and for the command\n");
-    }
+    arg_parse(argc, argv);
 
     argP = (argP == "") ? "./logger.so" : argP;
     setenv("LD_PRELOAD", argP.c_str(), 1);
