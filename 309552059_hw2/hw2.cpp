@@ -83,7 +83,7 @@ int close(int fd) {
         fprintf(stderr, "readlink() failed!\n");
         exit(1);
     }
-    int ret = old_close(fd);
+    int ret = (fd != STDERR_FILENO) ? old_close(fd) : 0;
     int FD = atoi(getenv("FD"));
     dprintf(FD, "[logger] close(\"%s\") = %d\n", path, ret);
 	return ret;
@@ -112,6 +112,29 @@ int creat(const char *pathname, mode_t mode) {
 	return ret;
 }
 
+static int (*old_creat64)(const char *, mode_t) = NULL;
+int creat64(const char *pathname, mode_t mode) {
+	if(old_creat64 == NULL) {
+		void *handle = dlopen("libc.so.6", RTLD_LAZY);
+		if(handle != NULL)
+			old_creat64 = (int (*)(const char *, mode_t))dlsym(handle, "creat64");
+	}
+    if(old_creat64 == NULL){
+        fprintf(stderr, "creat64() not found!\n");
+        exit(1);
+    }
+    char path[1024];
+    char *exist;
+    exist = realpath(pathname, path);
+    int ret = old_creat64(pathname, mode);
+    int FD = atoi(getenv("FD"));
+    if(exist == NULL)/* cannot resolve path */
+        dprintf(FD, "[logger] creat64(\"%s\", %o) = %d\n", pathname, mode, ret);
+    else
+        dprintf(FD, "[logger] creat64(\"%s\", %o) = %d\n", path, mode, ret);
+	return ret;
+}
+
 static int (*old_fclose)(FILE *) = NULL;
 int fclose(FILE *stream) {
 	if(old_fclose == NULL) {
@@ -130,7 +153,7 @@ int fclose(FILE *stream) {
         fprintf(stderr, "readlink() failed!\n");
         exit(1);
     }
-    int ret = old_fclose(stream);
+    int ret = (fd != STDERR_FILENO) ? old_fclose(stream) : 0;
     int FD = atoi(getenv("FD"));
     dprintf(FD, "[logger] fclose(\"%s\") = %d\n", path, ret);
 	return ret;
@@ -413,6 +436,23 @@ FILE *tmpfile() {
     FILE *ret = old_tmpfile();
     int FD = atoi(getenv("FD"));
     dprintf(FD, "[logger] tmpfile() = %p\n", ret);
+	return ret;
+}
+
+static FILE *(*old_tmpfile64)(void) = NULL;
+FILE *tmpfile64() {
+	if(old_tmpfile64 == NULL) {
+		void *handle = dlopen("libc.so.6", RTLD_LAZY);
+		if(handle != NULL)
+			old_tmpfile64 = (FILE * (*)(void))dlsym(handle, "tmpfile64");
+	}
+    if(old_tmpfile64 == NULL){
+        fprintf(stderr, "tmpfile64() not found!\n");
+        exit(1);
+    }
+    FILE *ret = old_tmpfile64();
+    int FD = atoi(getenv("FD"));
+    dprintf(FD, "[logger] tmpfile64() = %p\n", ret);
 	return ret;
 }
 
