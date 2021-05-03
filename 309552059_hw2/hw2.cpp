@@ -255,7 +255,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
 static int (*old_open)(const char *, int, ...) = NULL;
 int open(const char *pathname, int flags, ...) {
     mode_t mode = 0;
-    if((flags & O_CREAT) != 0){ /* O_CREAT exist */
+    if((flags & O_CREAT) != 0 || (flags & O_TMPFILE) != 0){ /* O_CREAT exist */
         va_list vl;
         va_start(vl, flags);
         mode = va_arg(vl, mode_t);
@@ -286,7 +286,7 @@ int open(const char *pathname, int flags, ...) {
 static int (*old_open64)(const char *, int, ...) = NULL;
 int open64(const char *pathname, int flags, ...) {
     mode_t mode = 0;
-    if((flags & O_CREAT) != 0){ /* O_CREAT exist */
+    if((flags & O_CREAT) != 0 || (flags & O_TMPFILE) != 0){ /* O_CREAT exist */
         va_list vl;
         va_start(vl, flags);
         mode = va_arg(vl, mode_t);
