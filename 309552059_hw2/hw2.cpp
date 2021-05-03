@@ -159,6 +159,29 @@ FILE *fopen(const char *pathname, const char *mode) {
 	return ret;
 }
 
+static FILE *(*old_fopen64)(const char *, const char *) = NULL;
+FILE *fopen64(const char *pathname, const char *mode) {
+	if(old_fopen64 == NULL) {
+		void *handle = dlopen("libc.so.6", RTLD_LAZY);
+		if(handle != NULL)
+			old_fopen64 = (FILE * (*)(const char *, const char *))dlsym(handle, "fopen64");
+	}
+    if(old_fopen64 == NULL){
+        fprintf(stderr, "fopen64() not found!\n");
+        exit(1);
+    }
+    char path[1024];
+    char *exist;
+    exist = realpath(pathname, path);
+    FILE *ret = old_fopen64(pathname, mode);
+    int FD = atoi(getenv("FD"));
+    if(exist == NULL)/* cannot resolve path */
+        dprintf(FD, "[logger] fopen64(\"%s\", \"%s\") = %p\n", pathname, mode, ret);
+    else
+        dprintf(FD, "[logger] fopen64(\"%s\", \"%s\") = %p\n", path, mode, ret);
+	return ret;
+}
+
 static size_t (*old_fread)(void *, size_t, size_t, FILE *) = NULL;
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
 	if(old_fread == NULL){
@@ -257,6 +280,37 @@ int open(const char *pathname, int flags, ...) {
         dprintf(FD, "[logger] open(\"%s\", %o, %o) = %d\n", pathname, flags, mode, ret);
     else
         dprintf(FD, "[logger] open(\"%s\", %o, %o) = %d\n", path, flags, mode, ret);
+	return ret;
+}
+
+static int (*old_open64)(const char *, int, ...) = NULL;
+int open64(const char *pathname, int flags, ...) {
+    mode_t mode = 0;
+    if((flags & O_CREAT) != 0){ /* O_CREAT exist */
+        va_list vl;
+        va_start(vl, flags);
+        mode = va_arg(vl, mode_t);
+        va_end(vl);
+    }
+    
+	if(old_open64 == NULL) {
+		void *handle = dlopen("libc.so.6", RTLD_LAZY);
+		if(handle != NULL)
+			old_open64 = (int (*)(const char*, int, ...))dlsym(handle, "open64");
+	}
+    if(old_open64 == NULL){
+        fprintf(stderr, "open64() not found!\n");
+        exit(1);
+    }
+    char path[1024];
+    char *exist;
+    exist = realpath(pathname, path);
+    int ret = (mode != 0) ? old_open64(pathname, flags, mode) : old_open64(pathname, flags);
+    int FD = atoi(getenv("FD"));
+    if(exist == NULL) /* cannot resolve path */
+        dprintf(FD, "[logger] open64(\"%s\", %o, %o) = %d\n", pathname, flags, mode, ret);
+    else
+        dprintf(FD, "[logger] open64(\"%s\", %o, %o) = %d\n", path, flags, mode, ret);
 	return ret;
 }
 
