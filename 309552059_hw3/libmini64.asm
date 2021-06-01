@@ -143,7 +143,7 @@ longjmp:
 	call sys_rt_sigprocmask
 	pop rsi
 	pop rdi
-	mov rax, rdi
+	mov rax, rsi
 
 	mov rbx, [rdi +  0]
 	mov rsp, [rdi + 8]
